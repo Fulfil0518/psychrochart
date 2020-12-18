@@ -16,9 +16,9 @@ from psychrolib import (
 )
 from scipy.interpolate import interp1d
 
-from .psychrocurves import PsychroCurve, PsychroCurves
-from .psychrolib_extra import GetTDryBulbFromMoistAirVolume
-from .util import solve_curves_with_iteration
+from psychrocurves import PsychroCurve, PsychroCurves
+from psychrolib_extra import GetTDryBulbFromMoistAirVolume
+from util import solve_curves_with_iteration
 
 f_vec_hum_ratio_from_vap_press = np.vectorize(GetHumRatioFromVapPres)
 f_vec_moist_air_enthalpy = np.vectorize(GetMoistAirEnthalpy)
@@ -352,10 +352,14 @@ def make_constant_wet_bulb_temperature_lines(
     )
 
     def _hum_ratio_for_constant_wet_temp_at_dry_temp(db_t, wb_t, p_atm):
-        return _factor_out_w() * GetHumRatioFromVapPres(
+        try:
+            temp = _factor_out_w() * GetHumRatioFromVapPres(
             GetSatVapPres(db_t) * GetRelHumFromTWetBulb(db_t, wb_t, p_atm),
             p_atm,
-        )
+            )
+        except:
+            temp = 0 
+        return temp
 
     curves = []
     for wbt, w_max in zip(wbt_values, w_max_constant_wbt):

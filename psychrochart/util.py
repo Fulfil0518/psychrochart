@@ -91,7 +91,7 @@ def _load_config(
                     new_config_d.update(json.load(f))
             config = _update_config(config, new_config_d)
         else:
-            assert isinstance(new_config, dict)
+            # assert isinstance(new_config, dict)
             config = _update_config(config, new_config)
 
     return config

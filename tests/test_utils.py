@@ -6,7 +6,7 @@ Tests utilities
 import json
 from unittest import TestCase
 
-from .conftest import TEST_BASEDIR
+from conftest import TEST_BASEDIR
 
 PATH_CONFIG_UPDATE = str(TEST_BASEDIR.parent / "test_chart_config_update.json")
 

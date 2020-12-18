@@ -8,7 +8,7 @@ from unittest import TestCase
 import numpy as np
 
 from psychrochart.agg import PsychroChart
-from .conftest import TEST_BASEDIR
+from conftest import TEST_BASEDIR
 
 # fmt: off
 TEST_EXAMPLE_ZONES = [
@@ -336,3 +336,8 @@ class TestsPsychroPlot(TestCase):
         chart.plot_legend()
         chart.save(path_svg_3)
         chart.close_fig()
+
+
+
+if __name__ == "__main__":
+    psy = test_custom_style_psychrochart_2()

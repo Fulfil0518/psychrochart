@@ -10,7 +10,7 @@ from matplotlib import patches
 from matplotlib.axes import Axes
 from matplotlib.path import Path
 
-from .util import mod_color
+from util import mod_color
 
 
 def _between_limits(

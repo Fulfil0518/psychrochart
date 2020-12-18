@@ -14,7 +14,14 @@ from psychrolib import GetStandardAtmPressure, IP, SetUnitSystem, SI
 from scipy.spatial import ConvexHull
 from scipy.spatial.qhull import QhullError
 
-from .chartdata import (
+import plotly.graph_objects as go
+import plotly.io as pio
+pio.renderers.default = "browser"
+
+
+
+
+from chartdata import (
     gen_points_in_constant_relative_humidity,
     make_constant_dry_bulb_v_line,
     make_constant_dry_bulb_v_lines,
@@ -26,8 +33,8 @@ from .chartdata import (
     make_saturation_line,
     make_zone_curve,
 )
-from .psychrocurves import PsychroCurves
-from .util import load_config, load_zones, mod_color
+from psychrocurves import PsychroCurves
+from util import load_config, load_zones, mod_color
 
 spec_vol_vec = np.vectorize(psy.GetMoistAirVolume)
 
@@ -118,6 +125,7 @@ class PsychroChart:
         """Generate the data to plot the psychrometric chart."""
         # Get styling
         config = load_config(styles)
+        config['chart_params']['with_constant_wet_temp']=False
         self.d_config = config
         self.temp_step = config["limits"]["step_temp"]
 
@@ -245,9 +253,16 @@ class PsychroChart:
         else:
             d_zones = load_zones(zones)
 
+# =============================================================================
+#         zones_ok = [
+#             make_zone_curve(zone_conf, self.temp_step, self.pressure)
+#             for zone_conf in d_zones["zones"]
+#             if zone_conf["zone_type"] in ("dbt-rh", "xy-points")
+#         ]
+# =============================================================================
         zones_ok = [
             make_zone_curve(zone_conf, self.temp_step, self.pressure)
-            for zone_conf in d_zones["zones"]
+            for zone_conf in d_zones
             if zone_conf["zone_type"] in ("dbt-rh", "xy-points")
         ]
         if zones_ok:
@@ -654,19 +669,197 @@ class PsychroChart:
         # Apply axis styles
         self._apply_axis_styling(ax, fig_params)
 
+# =============================================================================
+# Create plotly object and add traces to it
+# =============================================================================
+        plot_with_plotly = True  
+        plot_with_matplotlib = False
+        
+        curve_color = {
+            'constant_dry_temp_data' : f"rgba{tuple(self.d_config['constant_dry_temp']['color'])}",
+            'constant_h_data' : 'lightblue',
+            'constant_humidity_data' : f"rgba{tuple(self.d_config['constant_humidity']['color'])}",
+            'constant_rh_data' : 'lightgray',
+            'constant_v_data' : 'lightsteelblue',
+            'constant_wbt_data' : 'mediumblue',
+            'saturation' : 'black'
+            }
+        curve_weight = {
+            'constant_dry_temp_data' : f"{(self.d_config['constant_dry_temp']['linewidth'])}",
+            'constant_h_data' : f"{(self.d_config['constant_h']['linewidth'])}",
+            'constant_humidity_data' : f"{(self.d_config['constant_humidity']['linewidth'])}",
+            'constant_rh_data' : f"{(self.d_config['constant_rh']['linewidth'])}",
+            'constant_v_data' : f"{(self.d_config['constant_v']['linewidth'])}",
+            'constant_wbt_data' : f"{(self.d_config['constant_wet_temp']['linewidth'])}",
+            'saturation' : f"{(self.d_config['saturation']['linewidth'])}"
+            }
+        def convert_dash(input):
+            if input == "-":
+                output = 'solid'
+            elif input == "--":
+                output = 'dash'
+            elif input == "-.":
+                output = 'dashdot'
+            elif input == ":":
+                output = 'dot'
+            else:
+                output = input
+            return output
+        
+        curve_type = {
+            'constant_dry_temp_data' : f"{convert_dash(self.d_config['constant_dry_temp']['linestyle'])}",
+            'constant_h_data' : f"{convert_dash(self.d_config['constant_h']['linestyle'])}",
+            'constant_humidity_data' : f"{convert_dash(self.d_config['constant_humidity']['linestyle'])}",
+            'constant_rh_data' : f"{convert_dash(self.d_config['constant_rh']['linestyle'])}",
+            'constant_v_data' : f"{convert_dash(self.d_config['constant_v']['linestyle'])}",
+            'constant_wbt_data' : f"{convert_dash(self.d_config['constant_wet_temp']['linestyle'])}",
+            'saturation' : f"{convert_dash(self.d_config['saturation']['linestyle'])}"
+            }        
+        
+        label_boolean = {
+                'constant_h_data' : self.chart_params['constant_h_label'],
+                'constant_humidity_data' : self.chart_params['constant_humid_label'],
+                'constant_dry_temp_data' :self.chart_params['constant_temp_label'],
+                'constant_v_data' : self.chart_params['constant_v_label'],
+                'constant_wbt_data' : self.chart_params['constant_wet_temp_label'],
+                'constant_rh_data' : self.chart_params['constant_rh_label'],
+                'saturation' : False
+                }
+        curve_labels = {
+                'constant_h_data' : self.chart_params['constant_h_labels'],
+                # 'constant_humidity_data' : self.chart_params['constant_humid_label'],
+                # 'constant_dry_temp_data' :self.chart_params['constant_temp_label'],
+                'constant_v_data' : self.chart_params['constant_v_labels'],
+                'constant_wbt_data' : self.chart_params['constant_wet_temp_labels'],
+                'constant_rh_data' : self.chart_params['constant_rh_labels'],
+                }
+        
+        
+        
+        fig = go.Figure()
+        for curve_family in PSYCHRO_CURVES_KEYS:
+            idx1 = 0
+
+            if getattr(self, curve_family) is not None:
+                if plot_with_matplotlib:
+                    getattr(self, curve_family).plot(ax)
+                major_grid = 5
+                if plot_with_plotly:
+                    idx = 0
+                    for curve in getattr(self, curve_family).curves:
+                        x_data = curve.x_data
+                        y_data = curve.y_data
+                        # print(f'rgba{curve_color[curve_family]}')
+                        x_grid_width = float(curve_weight[curve_family])
+                        line_type = curve_type[curve_family]
+                        if curve_family == 'constant_dry_temp_data':
+                            if np.mod(x_data[0],major_grid)==0:
+                                x_grid_width = 3 * x_grid_width
+                        if curve_family == 'constant_humidity_data':
+                            if np.mod(y_data[0],major_grid)==0:
+                                x_grid_width = 3 * x_grid_width                 
+                                
+                                
+                                
+                                
+
+                        fig.add_trace(go.Scatter(
+                            x=x_data,
+                            y=y_data,
+                            mode='lines',
+                            legendgroup = curve_family, 
+                            name = curve_family, 
+                            showlegend=True if idx1==0 else False,
+                            
+                            line=dict(
+                                color=f'{curve_color[curve_family]}',
+                                width = x_grid_width,
+                                dash=curve_type[curve_family],
+                            )
+                        ))
+                        idx1+=1
+                        # if self.chart_params[curve]
+                        if label_boolean[curve_family]:
+                            fig.add_annotation(
+                                x=x_data[int(len(x_data)/2)], 
+                                y=y_data[int(len(y_data)/2)],
+                                text=self.chart_params['constant_rh_curves'][idx],
+                                showarrow=False,
+                                font=dict(
+                                    color='lightgrey',
+                                    )
+                                # yshift=10
+                                )
+                            idx+=1
+        if plot_with_plotly:
+            # Edit the layout
+            fig.update_layout(title='Psychrometric Chart',
+               xaxis_title='Temperature [°C]',
+               yaxis_title='Humidity Ratio [g<sub>w</sub>/kg<sub>da</sub>]',
+               xaxis=dict(range=self.d_config['limits']['range_temp_c'],
+                          showgrid=False
+                          ),
+               yaxis=dict(range=self.d_config['limits']['range_humidity_g_kg'],
+                          side='right',
+                          showgrid=False
+                          ),
+               showlegend=True,
+               # plot_bgcolor='verylightgray'
+               )
+            fig.update_yaxes(linecolor='lightgray', zeroline = False,)
+            fig.update_xaxes(linecolor='lightgray', zeroline = False)
+
+            # fig.show()
+
+# major temp grid = 'darkblue'
+# minor temp grid = 'blue'  
+# major humidity ratio = 'darkblue'
+# minor humidity ratio = 'blue'
+# RH lines 'blue'              
         # Plot curves:
-        [
-            getattr(self, curve_family).plot(ax)
-            for curve_family in PSYCHRO_CURVES_KEYS
-            if getattr(self, curve_family) is not None
-        ]
+        # [
+        #     getattr(self, curve_family).plot(ax)
+        #     for curve_family in PSYCHRO_CURVES_KEYS
+        #     if getattr(self, curve_family) is not None
+        # ]
 
         # Plot zones:
-        [zone.plot(ax=ax) for zone in self.zones]
+        # [zone.plot(ax=ax) for zone in self.zones]
+        for zone in self.zones:
+            style_dict = zone.curves[0].style
+            fillcolor = f"rgba{tuple(style_dict['facecolor'])}"
+            linecolor = f"rgba{tuple(style_dict['edgecolor'])}"
+            linewidth = style_dict['linewidth']
+            linestyle = style_dict['linestyle']
+            # if type(fillcolor) is not tuple:
+                
+            
+            zone.plot(ax=ax)
+            for zone_elem in zone.curves:
+                x_data = zone_elem.x_data
+                y_data = zone_elem.y_data
+                fig.add_trace(go.Scatter(
+                    x=x_data,
+                    y=y_data,
+                    fill='toself',
+                    fillcolor=fillcolor,
+                    mode='lines',
+                    line=dict(
+                    color=linecolor,
+                    width = linewidth, 
+                    dash='dash',
+                    )
+                    ))
+
 
         # Set the Axes object
         self._axes = ax
-        return ax
+        
+        if plot_with_plotly:
+            out = fig
+        else:
+            out = ax
+        return out
 
     def remove_annotations(self) -> None:
         """Remove the annotations made in the chart to reuse it."""
@@ -703,3 +896,152 @@ class PsychroChart:
             self._fig = None
             self._canvas = None
             gc.collect()
+
+
+if __name__ == "__main__":
+    TEST_EXAMPLE_ZONES = [
+        {
+            "label": "Summer",
+            "points_x": [23, 28],
+            "points_y": [40, 60],
+            "style": {
+                "edgecolor": [1.0, 0.749, 0.0, 0.8],
+                "facecolor": [1.0, 0.749, 0.0, 0.2],
+                "linestyle": "--",
+                "linewidth": 2,
+            },
+            "zone_type": "dbt-rh",
+        },
+        {
+            "label": "Winter",
+            "points_x": [18, 23],
+            "points_y": [35, 55],
+            "style": {
+                "edgecolor": [0.498, 0.624, 0.8],
+                "facecolor": [0.498, 0.624, 1.0, 0.2],
+                "linestyle": "--",
+                "linewidth": 2,
+            },
+            "zone_type": "dbt-rh",
+        },
+    ]
+    TEST_EXAMPLE_FIG_CONFIG = {
+        "figsize": [16, 9],
+        "partial_axis": True,
+        "position": [0, 0, 1, 1],
+        "title": None,
+        "x_axis": {
+            "color": [0.855, 0.145, 0.114],
+            "linestyle": "-",
+            "linewidth": 2,
+        },
+        "x_axis_labels": {"color": [0.855, 0.145, 0.114], "fontsize": 10},
+        "x_axis_ticks": {
+            "color": [0.855, 0.145, 0.114],
+            "direction": "in",
+            "pad": -20,
+        },
+        "x_label": None,
+        "y_axis": {
+            "color": [0.0, 0.125, 0.376],
+            "linestyle": "-",
+            "linewidth": 2,
+        },
+        "y_axis_labels": {"color": [0.0, 0.125, 0.376], "fontsize": 10},
+        "y_axis_ticks": {
+            "color": [0.0, 0.125, 0.376],
+            "direction": "in",
+            "pad": -20,
+        },
+        "y_label": None,
+    }    
+    custom_style = {
+            "chart_params": {
+                "constant_h_label": None,
+                "constant_h_labels": [-25, -15, 0, 10, 15],
+                "constant_h_step": 5,
+                "constant_humid_label": None,
+                "constant_humid_label_include_limits": False,
+                "constant_humid_label_step": 1,
+                "constant_humid_step": 0.5,
+                "constant_rh_curves": [10, 20, 30, 40, 50, 60, 70, 80, 90],
+                "constant_rh_label": None,
+                "constant_rh_labels": [20, 40, 60],
+                "constant_rh_labels_loc": 0.8,
+                "constant_temp_label": None,
+                "constant_temp_label_include_limits": False,
+                "constant_temp_label_step": 5,
+                "constant_temp_step": 1,
+                "constant_v_label": None,
+                "constant_v_labels": [0.74, 0.76, 0.78, 0.8],
+                "constant_v_labels_loc": 0.01,
+                "constant_v_step": 0.01,
+                "constant_wet_temp_label": None,
+                "constant_wet_temp_labels": [-15, -10, -5, 0],
+                "constant_wet_temp_step": 5,
+                "range_wet_temp": [-25, 5],
+                "range_h": [-30, 300],
+                "range_vol_m3_kg": [0.7, 1.8],
+                "with_constant_dry_temp": True,
+                "with_constant_h": True,
+                "with_constant_humidity": True,
+                "with_constant_rh": True,
+                "with_constant_v": True,
+                "with_constant_wet_temp": True,
+                "with_zones": False,
+            },
+            "constant_dry_temp": {
+                "color": [0.855, 0.145, 0.114, 0.7],
+                "linestyle": ":",
+                "linewidth": 0.75,
+            },
+            "constant_h": {
+                "color": [0.251, 0.0, 0.502, 0.7],
+                "linestyle": "-",
+                "linewidth": 2,
+            },
+            "constant_humidity": {
+                "color": [0.0, 0.125, 0.376, 0.7],
+                "linestyle": ":",
+                "linewidth": 0.75,
+            },
+            "constant_rh": {
+                "color": [0.0, 0.498, 1.0, 0.7],
+                "linestyle": "-.",
+                "linewidth": 2,
+            },
+            "constant_v": {
+                "color": [0.0, 0.502, 0.337, 0.7],
+                "linestyle": "-",
+                "linewidth": 1,
+            },
+            "constant_wet_temp": {
+                "color": [0.498, 0.875, 1.0, 0.7],
+                "linestyle": "-",
+                "linewidth": 1,
+            },
+            "figure": TEST_EXAMPLE_FIG_CONFIG,
+            "limits": {
+                "range_humidity_g_kg": [0, 60],
+                "range_temp_c": [-40, 60],
+                "step_temp": 0.5,
+                "pressure_kpa": 101.42,
+            },
+            "saturation": {
+                "color": [0.855, 0.145, 0.114],
+                "linestyle": "-",
+                "linewidth": 5,
+            },
+            "zones": TEST_EXAMPLE_ZONES,
+        }   
+    
+   
+    psy = PsychroChart(custom_style)
+    psy.plot()
+
+
+    psy = PsychroChart('ashrae')
+    psy = PsychroChart()
+
+
+    
